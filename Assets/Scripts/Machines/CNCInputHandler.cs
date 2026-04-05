@@ -72,6 +72,10 @@ public class CNCInputHandler : MonoBehaviour
     /// </summary>
     public void SetEnabled(bool enabled)
     {
+        if (enabled != IsEnabled)
+        {
+            Debug.Log($"[CNCInputHandler] Input {(enabled ? "ENABLED" : "DISABLED")}");
+        }
         IsEnabled = enabled;
         if (!enabled)
             CurrentInput = Vector3.zero;
@@ -97,7 +101,15 @@ public class CNCInputHandler : MonoBehaviour
         if (Input.GetKey(_forwardKey)) z += 1f;
         if (Input.GetKey(_backwardKey)) z -= 1f;
 
-        CurrentInput = new Vector3(x, y, z);
+        Vector3 newInput = new Vector3(x, y, z);
+
+        // Log when input starts (transition from zero to non-zero)
+        if (CurrentInput.sqrMagnitude < 0.001f && newInput.sqrMagnitude > 0.001f)
+        {
+            Debug.Log($"[CNCInputHandler] Moving: X={x}, Y={y}, Z={z}");
+        }
+
+        CurrentInput = newInput;
 
         // Only fire event if there's actual input
         if (CurrentInput.sqrMagnitude > 0.001f)

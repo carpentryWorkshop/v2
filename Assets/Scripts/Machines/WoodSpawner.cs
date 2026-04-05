@@ -78,6 +78,8 @@ public class WoodSpawner : MonoBehaviour
             return;
         }
 
+        Debug.Log("[WoodSpawner] Resetting wood piece to fresh state.");
+
         // Update spawn point position if it has moved
         if (_spawnPoint != null)
         {

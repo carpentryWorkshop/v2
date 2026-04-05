@@ -182,6 +182,7 @@ public class CNCScreenDisplay : MonoBehaviour
     /// <summary>Selects a shape for Auto mode cutting.</summary>
     public void SelectShape(ShapePathGenerator.ShapeType shape)
     {
+        Debug.Log($"[CNCScreenDisplay] Shape selected via screen: {shape}");
         _selectedShape = shape;
 
         if (_autoController != null)
@@ -219,6 +220,7 @@ public class CNCScreenDisplay : MonoBehaviour
 
     private void HandleModeChanged(CNCMachine.CNCMode newMode)
     {
+        Debug.Log($"[CNCScreenDisplay] Display mode changed to: {newMode}");
         SetMode(newMode);
     }
 
@@ -231,15 +233,30 @@ public class CNCScreenDisplay : MonoBehaviour
     {
         // Use number keys 1-4 to select shapes in Auto mode
         if (Input.GetKeyDown(KeyCode.Alpha1))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 1 pressed -> Rectangle");
             SelectShape(ShapePathGenerator.ShapeType.Rectangle);
+        }
         else if (Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 2 pressed -> Circle");
             SelectShape(ShapePathGenerator.ShapeType.Circle);
+        }
         else if (Input.GetKeyDown(KeyCode.Alpha3))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 3 pressed -> Triangle");
             SelectShape(ShapePathGenerator.ShapeType.Triangle);
+        }
         else if (Input.GetKeyDown(KeyCode.Alpha4))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 4 pressed -> Star");
             SelectShape(ShapePathGenerator.ShapeType.Star);
+        }
         else if (Input.GetKeyDown(KeyCode.Tab))
+        {
+            Debug.Log("[CNCScreenDisplay] Tab pressed -> Next shape");
             NextShape();
+        }
     }
 
     private void DrawFrame()

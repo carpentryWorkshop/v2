@@ -104,6 +104,10 @@ public class CNCCutter : MonoBehaviour
     /// </summary>
     public void SetEnabled(bool enabled)
     {
+        if (enabled != IsEnabled)
+        {
+            Debug.Log($"[CNCCutter] Cutter movement {(enabled ? "ENABLED" : "DISABLED")}");
+        }
         IsEnabled = enabled;
 
         if (_inputHandler != null)
@@ -147,6 +151,8 @@ public class CNCCutter : MonoBehaviour
     /// </summary>
     public void ReturnToHome()
     {
+        Debug.Log("[CNCCutter] Returning to home position.");
+        
         if (_cutterTransform != null)
             _cutterTransform.localPosition = _cutterStartLocal;
 

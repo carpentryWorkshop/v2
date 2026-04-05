@@ -104,6 +104,7 @@ public class CNCAutoController : MonoBehaviour
     /// </summary>
     public void SelectShape(ShapePathGenerator.ShapeType shape)
     {
+        Debug.Log($"[CNCAutoController] Shape selected: {shape}");
         SelectedShape = shape;
         OnShapeChanged?.Invoke(shape);
     }
@@ -131,6 +132,8 @@ public class CNCAutoController : MonoBehaviour
             return;
         }
 
+        Debug.Log($"[CNCAutoController] Starting auto engrave: {SelectedShape}");
+
         // Generate the path
         Vector2 center = new Vector2(
             (_cuttingPath.WorkAreaMin.x + _cuttingPath.WorkAreaMax.x) / 2f,
@@ -153,6 +156,7 @@ public class CNCAutoController : MonoBehaviour
             return;
         }
 
+        Debug.Log($"[CNCAutoController] Path generated with {_currentPath.Count} points.");
         _autoCutCoroutine = StartCoroutine(AutoCutRoutine());
     }
 
@@ -163,6 +167,7 @@ public class CNCAutoController : MonoBehaviour
     {
         if (_autoCutCoroutine != null)
         {
+            Debug.Log("[CNCAutoController] Auto engrave CANCELLED");
             StopCoroutine(_autoCutCoroutine);
             _autoCutCoroutine = null;
         }
@@ -218,6 +223,8 @@ public class CNCAutoController : MonoBehaviour
         int pathIndex = 0;
         Vector3 currentTarget = _currentPath[0];
 
+        Debug.Log($"[CNCAutoController] Engraving point 1/{_currentPath.Count}");
+
         // Move to first point
         yield return StartCoroutine(MoveToPosition(currentTarget));
 
@@ -227,6 +234,12 @@ public class CNCAutoController : MonoBehaviour
             pathIndex = i;
             currentTarget = _currentPath[i];
 
+            // Log progress every 10 points or at key milestones
+            if (i % 10 == 0 || i == _currentPath.Count - 1)
+            {
+                Debug.Log($"[CNCAutoController] Engraving point {i + 1}/{_currentPath.Count}");
+            }
+
             yield return StartCoroutine(MoveToPosition(currentTarget));
 
             Progress = (float)i / (_currentPath.Count - 1);
@@ -234,6 +247,8 @@ public class CNCAutoController : MonoBehaviour
 
         IsAutoCutting = false;
         Progress = 1f;
+        
+        Debug.Log("[CNCAutoController] Auto engrave COMPLETED");
         OnAutoCutComplete?.Invoke();
 
         // Notify machine that cut is complete

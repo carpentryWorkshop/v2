@@ -155,6 +155,7 @@ public class CNC3DButton : Interactable
     public void Release()
     {
         _isPressed = false;
+        Debug.Log($"[CNC3DButton] {name} released.");
     }
 
     /// <summary>

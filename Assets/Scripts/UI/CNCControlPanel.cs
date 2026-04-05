@@ -106,12 +106,14 @@ public class CNCControlPanel : ControlPanel
 
     public override void PressStart()
     {
+        Debug.Log("[CNCControlPanel] Start button pressed.");
         base.PressStart();
         _machine?.StartCut();
     }
 
     public override void PressStop()
     {
+        Debug.Log("[CNCControlPanel] Stop button pressed.");
         base.PressStop();
         _machine?.StopCut();
     }
@@ -169,6 +171,7 @@ public class CNCControlPanel : ControlPanel
     /// </summary>
     public void PressMode()
     {
+        Debug.Log("[CNCControlPanel] Mode button pressed.");
         if (_machine == null) return;
 
         _machine.SwitchMode();

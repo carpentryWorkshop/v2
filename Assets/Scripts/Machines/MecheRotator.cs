@@ -74,6 +74,10 @@ public class MecheRotator : MonoBehaviour
     /// </summary>
     public void StartSpinning()
     {
+        if (!_shouldSpin)
+        {
+            Debug.Log("[MecheRotator] Rotation STARTED");
+        }
         _shouldSpin = true;
         _targetSpeedMultiplier = 1f;
     }
@@ -83,6 +87,10 @@ public class MecheRotator : MonoBehaviour
     /// </summary>
     public void StopSpinning()
     {
+        if (_shouldSpin)
+        {
+            Debug.Log("[MecheRotator] Rotation STOPPED");
+        }
         _shouldSpin = false;
         _targetSpeedMultiplier = 0f;
     }

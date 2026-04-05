@@ -228,15 +228,19 @@ public class CNCMachine : MonoBehaviour
 
     private void EnterState(CNCState state)
     {
+        Debug.Log($"[CNCMachine] Entering state: {state}");
+        
         switch (state)
         {
             case CNCState.Idle:
+                Debug.Log("[CNCMachine] Machine STOPPED - Idle state");
                 _cutter?.SetEnabled(false);
                 if (_inputHandler != null)
                     _inputHandler.SetEnabled(false);
                 break;
 
             case CNCState.Positioning:
+                Debug.Log("[CNCMachine] Machine STARTED - Positioning...");
                 _positioningTimer = 0f;
                 _cutter?.SetEnabled(false);
                 if (_inputHandler != null)
@@ -244,10 +248,12 @@ public class CNCMachine : MonoBehaviour
                 break;
 
             case CNCState.Cutting:
+                Debug.Log($"[CNCMachine] Machine CUTTING in {CurrentMode} mode");
                 EnterCuttingState();
                 break;
 
             case CNCState.Done:
+                Debug.Log("[CNCMachine] Cut cycle DONE");
                 ExitCuttingState();
                 OnCutComplete?.Invoke();
                 // Auto-return to Idle so the panel can start a new cycle
