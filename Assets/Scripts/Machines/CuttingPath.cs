@@ -15,12 +15,18 @@ public class CuttingPath : ScriptableObject
     [Tooltip("Maximum X and Z coordinates the cutter can reach (local to CNC machine).")]
     [SerializeField] private Vector2 _workAreaMax = new Vector2(0.5f, 0.5f);
 
-    [Header("Cut Settings")]
+    [Header("Cut Settings (Y-axis bounds)")]
     [Tooltip("Maximum cutting depth on the Y axis (downward, positive value).")]
     [SerializeField] private float _maxCutDepth = 0.05f;
 
     [Tooltip("Default Y position (height) of the cutter when not plunging.")]
     [SerializeField] private float _idleHeight = 0.1f;
+
+    [Tooltip("Minimum Y position (lowest the spindle can go).")]
+    [SerializeField] private float _minHeight = -0.05f;
+
+    [Tooltip("Maximum Y position (highest the spindle can go).")]
+    [SerializeField] private float _maxHeight = 0.15f;
 
     // ── Public accessors ────────────────────────────────────────────────────
 
@@ -42,6 +48,15 @@ public class CuttingPath : ScriptableObject
     /// <summary>Y height of the cutter when idling above the workpiece.</summary>
     public float IdleHeight => _idleHeight;
 
+    /// <summary>Minimum Y position the spindle can reach.</summary>
+    public float MinHeight => _minHeight;
+
+    /// <summary>Maximum Y position the spindle can reach.</summary>
+    public float MaxHeight => _maxHeight;
+
+    /// <summary>Height span of the Y-axis movement.</summary>
+    public float HeightRange => _maxHeight - _minHeight;
+
     /// <summary>
     /// Clamps a local-space XZ position to the work area bounds.
     /// </summary>
@@ -62,5 +77,23 @@ public class CuttingPath : ScriptableObject
             Mathf.InverseLerp(_workAreaMin.x, _workAreaMax.x, localXZ.x),
             Mathf.InverseLerp(_workAreaMin.y, _workAreaMax.y, localXZ.y)
         );
+    }
+
+    /// <summary>
+    /// Clamps a Y position to the height bounds.
+    /// </summary>
+    public float ClampHeight(float y)
+    {
+        return Mathf.Clamp(y, _minHeight, _maxHeight);
+    }
+
+    /// <summary>
+    /// Clamps a full 3D position to the work area bounds (XZ) and height bounds (Y).
+    /// </summary>
+    public Vector3 Clamp3D(Vector3 position)
+    {
+        Vector2 clampedXZ = Clamp(new Vector2(position.x, position.z));
+        float clampedY = ClampHeight(position.y);
+        return new Vector3(clampedXZ.x, clampedY, clampedXZ.y);
     }
 }

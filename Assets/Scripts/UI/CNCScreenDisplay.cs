@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -6,32 +7,38 @@ using UnityEngine;
 /// <see cref="RenderTexture"/>, which is then displayed on the Screen.obj mesh
 /// via its material.
 ///
+/// Supports two display modes:
+///   - Manual Mode: Shows cutter position + trail line
+///   - Auto Mode: Shows shape selection UI with 4 clickable regions
+///
 /// What is drawn each frame (using the GL immediate-mode API on a Camera):
-///   • A border rectangle representing the work-area bounds
-///   • A crosshair dot showing the current cutter position
-///   • A continuous trail line tracing where the cutter has been
+///   - A border rectangle representing the work-area bounds
+///   - A crosshair dot showing the current cutter position
+///   - A continuous trail line tracing where the cutter has been
+///   - Shape selection icons (in Auto mode)
 ///
 /// Setup in the scene:
 ///   1. Attach this script to the Screen.obj GameObject.
-///   2. Create a RenderTexture asset (e.g. 512×512, R8G8B8 format) and assign it
+///   2. Create a RenderTexture asset (e.g. 512x512, R8G8B8 format) and assign it
 ///      to <see cref="_renderTexture"/>.
 ///   3. Create a URP/Lit (or Unlit) material, set its Base Map to that same
 ///      RenderTexture, and assign it to the Screen mesh renderer.
-///   4. Assign the <see cref="CNCCutter"/> and <see cref="CuttingPath"/> references.
-///   5. Optionally create and assign a <see cref="_drawCamera"/> — a small
-///      orthographic camera that renders only the display layer.
-///      If left null, GL drawing falls back to OnPostRender on the main camera.
-///
-/// The trail is stored as a list of normalised UV points (0–1) and replayed each
-/// frame, so the display stays crisp even if the RenderTexture is resized.
+///   4. Assign the <see cref="CNCCutter"/>, <see cref="CNCMachine"/>, and 
+///      <see cref="CuttingPath"/> references.
 /// </summary>
 public class CNCScreenDisplay : MonoBehaviour
 {
     // ── Inspector ─────────────────────────────────────────────────────────────
 
     [Header("References")]
+    [Tooltip("The CNCMachine to monitor for mode changes.")]
+    [SerializeField] private CNCMachine _machine;
+
     [Tooltip("The CNCCutter whose position this display tracks.")]
     [SerializeField] private CNCCutter _cutter;
+
+    [Tooltip("The CNCAutoController for shape selection.")]
+    [SerializeField] private CNCAutoController _autoController;
 
     [Tooltip("ScriptableObject defining the work area (must match the one on CNCCutter).")]
     [SerializeField] private CuttingPath _cuttingPath;
@@ -39,8 +46,7 @@ public class CNCScreenDisplay : MonoBehaviour
     [Tooltip("RenderTexture that this display draws into. Assign to the Screen mesh material.")]
     [SerializeField] private RenderTexture _renderTexture;
 
-    [Tooltip("Optional dedicated orthographic Camera for GL rendering. " +
-             "If null, drawing hooks into the main camera's OnPostRender.")]
+    [Tooltip("Optional dedicated orthographic Camera for GL rendering.")]
     [SerializeField] private Camera _drawCamera;
 
     [Header("Display Settings")]
@@ -59,24 +65,36 @@ public class CNCScreenDisplay : MonoBehaviour
     [Tooltip("Crosshair size as a fraction of the display width.")]
     [SerializeField] [Range(0.01f, 0.05f)] private float _cursorSize = 0.025f;
 
-    [Tooltip("Maximum number of trail points kept in memory. " +
-             "Older points are discarded when the list is full.")]
+    [Header("Trail Settings")]
+    [Tooltip("Maximum number of trail points kept in memory.")]
     [SerializeField] [Range(64, 4096)] private int _maxTrailPoints = 1024;
 
-    [Tooltip("Minimum distance (normalised 0–1) the cutter must move before a new " +
-             "trail point is recorded. Prevents duplicate points.")]
+    [Tooltip("Minimum distance (normalised 0-1) the cutter must move before a new trail point is recorded.")]
     [SerializeField] [Range(0.001f, 0.02f)] private float _trailMinDistance = 0.004f;
+
+    [Header("Shape Selection (Auto Mode)")]
+    [Tooltip("Colour of unselected shape icons.")]
+    [SerializeField] private Color _shapeColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+
+    [Tooltip("Colour of the selected shape icon.")]
+    [SerializeField] private Color _shapeSelectedColor = new Color(0f, 1f, 0.5f, 1f);
+
+    [Tooltip("Colour of the mode label text.")]
+    [SerializeField] private Color _labelColor = new Color(0.8f, 0.8f, 0.8f, 1f);
+
+    // ── Events ────────────────────────────────────────────────────────────────
+
+    /// <summary>Fires when a shape is selected in Auto mode.</summary>
+    public event Action<ShapePathGenerator.ShapeType> OnShapeSelected;
 
     // ── Private state ─────────────────────────────────────────────────────────
 
-    // All points are stored in normalised UV space [0,1]×[0,1]
     private readonly List<Vector2> _trailPoints = new List<Vector2>();
-
     private Vector2 _normalisedCursorPos = new Vector2(0.5f, 0.5f);
     private Material _glMaterial;
-    private bool _isDrawing;
+    private CNCMachine.CNCMode _currentDisplayMode = CNCMachine.CNCMode.Manual;
+    private ShapePathGenerator.ShapeType _selectedShape = ShapePathGenerator.ShapeType.Rectangle;
 
-    // Margin inside the RT so the border has padding
     private const float MARGIN = 0.08f;
 
     // ── Unity lifecycle ───────────────────────────────────────────────────────
@@ -87,14 +105,12 @@ public class CNCScreenDisplay : MonoBehaviour
 
         if (_renderTexture == null)
         {
-            Debug.LogWarning("[CNCScreenDisplay] No RenderTexture assigned. " +
-                             "Creating a default 512×512 RT.", this);
+            Debug.LogWarning("[CNCScreenDisplay] No RenderTexture assigned. Creating a default 512x512 RT.", this);
             _renderTexture = new RenderTexture(512, 512, 0, RenderTextureFormat.ARGB32);
             _renderTexture.name = "CNCScreen_RT";
             _renderTexture.Create();
         }
 
-        // Assign the RT to this GameObject's renderer material
         var rend = GetComponent<Renderer>();
         if (rend != null)
             rend.sharedMaterial.mainTexture = _renderTexture;
@@ -105,6 +121,12 @@ public class CNCScreenDisplay : MonoBehaviour
         if (_cutter != null)
             _cutter.OnCutterMoved += HandleCutterMoved;
 
+        if (_machine != null)
+            _machine.OnModeChanged += HandleModeChanged;
+
+        if (_autoController != null)
+            _autoController.OnShapeChanged += HandleShapeChanged;
+
         if (_drawCamera != null)
             _drawCamera.targetTexture = _renderTexture;
     }
@@ -113,23 +135,32 @@ public class CNCScreenDisplay : MonoBehaviour
     {
         if (_cutter != null)
             _cutter.OnCutterMoved -= HandleCutterMoved;
+
+        if (_machine != null)
+            _machine.OnModeChanged -= HandleModeChanged;
+
+        if (_autoController != null)
+            _autoController.OnShapeChanged -= HandleShapeChanged;
+    }
+
+    private void Start()
+    {
+        if (_machine != null)
+            _currentDisplayMode = _machine.CurrentMode;
+
+        if (_autoController != null)
+            _selectedShape = _autoController.SelectedShape;
     }
 
     private void Update()
     {
-        // If using a dedicated draw camera, trigger a redraw every frame
-        if (_drawCamera != null)
-            DrawFrame();
-    }
-
-    /// <summary>
-    /// Called by Unity when the attached camera finishes rendering.
-    /// Used as fallback when no dedicated _drawCamera is assigned.
-    /// </summary>
-    private void OnPostRender()
-    {
-        if (_drawCamera != null) return; // dedicated camera path handles this
         DrawFrame();
+
+        // Handle shape selection input in Auto mode
+        if (_currentDisplayMode == CNCMachine.CNCMode.Auto)
+        {
+            HandleShapeSelectionInput();
+        }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -138,6 +169,34 @@ public class CNCScreenDisplay : MonoBehaviour
     public void ClearTrail()
     {
         _trailPoints.Clear();
+    }
+
+    /// <summary>Sets the display mode (called automatically when machine mode changes).</summary>
+    public void SetMode(CNCMachine.CNCMode mode)
+    {
+        _currentDisplayMode = mode;
+        if (mode == CNCMachine.CNCMode.Manual)
+            ClearTrail();
+    }
+
+    /// <summary>Selects a shape for Auto mode cutting.</summary>
+    public void SelectShape(ShapePathGenerator.ShapeType shape)
+    {
+        Debug.Log($"[CNCScreenDisplay] Shape selected via screen: {shape}");
+        _selectedShape = shape;
+
+        if (_autoController != null)
+            _autoController.SelectShape(shape);
+
+        OnShapeSelected?.Invoke(shape);
+    }
+
+    /// <summary>Cycles to the next shape.</summary>
+    public void NextShape()
+    {
+        int current = (int)_selectedShape;
+        int count = Enum.GetValues(typeof(ShapePathGenerator.ShapeType)).Length;
+        SelectShape((ShapePathGenerator.ShapeType)((current + 1) % count));
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -149,7 +208,6 @@ public class CNCScreenDisplay : MonoBehaviour
         Vector2 norm = _cuttingPath.Normalise(new Vector2(localPosition.x, localPosition.z));
         _normalisedCursorPos = norm;
 
-        // Record trail point only if we've moved far enough
         if (_trailPoints.Count == 0 ||
             Vector2.Distance(_trailPoints[_trailPoints.Count - 1], norm) >= _trailMinDistance)
         {
@@ -158,10 +216,47 @@ public class CNCScreenDisplay : MonoBehaviour
 
             _trailPoints.Add(norm);
         }
+    }
 
-        // Force a redraw when not using a dedicated camera
-        if (_drawCamera == null)
-            DrawFrame();
+    private void HandleModeChanged(CNCMachine.CNCMode newMode)
+    {
+        Debug.Log($"[CNCScreenDisplay] Display mode changed to: {newMode}");
+        SetMode(newMode);
+    }
+
+    private void HandleShapeChanged(ShapePathGenerator.ShapeType shape)
+    {
+        _selectedShape = shape;
+    }
+
+    private void HandleShapeSelectionInput()
+    {
+        // Use number keys 1-4 to select shapes in Auto mode
+        if (Input.GetKeyDown(KeyCode.Alpha1))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 1 pressed -> Rectangle");
+            SelectShape(ShapePathGenerator.ShapeType.Rectangle);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 2 pressed -> Circle");
+            SelectShape(ShapePathGenerator.ShapeType.Circle);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha3))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 3 pressed -> Triangle");
+            SelectShape(ShapePathGenerator.ShapeType.Triangle);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha4))
+        {
+            Debug.Log("[CNCScreenDisplay] Key 4 pressed -> Star");
+            SelectShape(ShapePathGenerator.ShapeType.Star);
+        }
+        else if (Input.GetKeyDown(KeyCode.Tab))
+        {
+            Debug.Log("[CNCScreenDisplay] Tab pressed -> Next shape");
+            NextShape();
+        }
     }
 
     private void DrawFrame()
@@ -171,22 +266,59 @@ public class CNCScreenDisplay : MonoBehaviour
         RenderTexture previous = RenderTexture.active;
         RenderTexture.active = _renderTexture;
 
-        // Clear to background colour
         GL.Clear(true, true, _backgroundColor);
-
         GL.PushMatrix();
-        // Map GL clip space to [0,1]×[0,1] of the RT
         GL.LoadPixelMatrix(0, _renderTexture.width, _renderTexture.height, 0);
 
         _glMaterial.SetPass(0);
 
-        DrawBorder();
-        DrawTrail();
-        DrawCursor();
+        if (_currentDisplayMode == CNCMachine.CNCMode.Manual)
+        {
+            DrawManualModeDisplay();
+        }
+        else
+        {
+            DrawAutoModeDisplay();
+        }
 
         GL.PopMatrix();
-
         RenderTexture.active = previous;
+    }
+
+    private void DrawManualModeDisplay()
+    {
+        DrawBorder();
+        DrawModeLabel("MANUAL");
+        DrawTrail();
+        DrawCursor();
+    }
+
+    private void DrawAutoModeDisplay()
+    {
+        DrawBorder();
+        DrawModeLabel("AUTO");
+        DrawShapeSelection();
+        DrawSelectedShapePreview();
+    }
+
+    private void DrawModeLabel(string text)
+    {
+        // Mode label at top center - simplified as we can't easily draw text with GL
+        // Instead, draw a simple indicator
+        float w = _renderTexture.width;
+        float h = _renderTexture.height;
+
+        GL.Begin(GL.LINES);
+        GL.Color(_labelColor);
+
+        // Draw a simple line indicator at top
+        float labelY = MARGIN * h * 0.5f;
+        float labelWidth = 0.2f * w;
+        float centerX = w * 0.5f;
+
+        DrawLine(new Vector2(centerX - labelWidth / 2, labelY), new Vector2(centerX + labelWidth / 2, labelY));
+
+        GL.End();
     }
 
     private void DrawBorder()
@@ -195,11 +327,10 @@ public class CNCScreenDisplay : MonoBehaviour
         float h = _renderTexture.height;
         float m = MARGIN;
 
-        // Border rectangle corners in pixel space
-        Vector2 tl = new Vector2(m * w,       m * h);
+        Vector2 tl = new Vector2(m * w, m * h);
         Vector2 tr = new Vector2((1f - m) * w, m * h);
         Vector2 br = new Vector2((1f - m) * w, (1f - m) * h);
-        Vector2 bl = new Vector2(m * w,        (1f - m) * h);
+        Vector2 bl = new Vector2(m * w, (1f - m) * h);
 
         GL.Begin(GL.LINES);
         GL.Color(_borderColor);
@@ -209,7 +340,6 @@ public class CNCScreenDisplay : MonoBehaviour
         DrawLine(br, bl);
         DrawLine(bl, tl);
 
-        // Corner tick marks
         float tick = 0.04f * w;
         DrawLine(tl, tl + new Vector2(tick, 0));
         DrawLine(tl, tl + new Vector2(0, tick));
@@ -254,11 +384,8 @@ public class CNCScreenDisplay : MonoBehaviour
         GL.Begin(GL.LINES);
         GL.Color(_cursorColor);
 
-        // Horizontal bar
         DrawLine(c + new Vector2(-half, 0), c + new Vector2(half, 0));
-        // Vertical bar
         DrawLine(c + new Vector2(0, -half), c + new Vector2(0, half));
-        // Diagonal cross (X marker)
         float d = half * 0.5f;
         DrawLine(c + new Vector2(-d, -d), c + new Vector2(d, d));
         DrawLine(c + new Vector2(d, -d), c + new Vector2(-d, d));
@@ -266,7 +393,127 @@ public class CNCScreenDisplay : MonoBehaviour
         GL.End();
     }
 
-    /// <summary>Converts a normalised [0,1] position to pixel space within the work-area margin.</summary>
+    private void DrawShapeSelection()
+    {
+        float w = _renderTexture.width;
+        float h = _renderTexture.height;
+
+        // Draw 4 shape icons in a 2x2 grid
+        float gridSize = 0.35f;
+        float iconSize = gridSize * 0.4f * w;
+        float spacing = gridSize * w;
+        float startX = w * 0.5f - spacing * 0.5f;
+        float startY = h * 0.3f;
+
+        // Rectangle (top-left) - key 1
+        DrawShapeIcon(ShapePathGenerator.ShapeType.Rectangle, 
+            new Vector2(startX, startY), iconSize);
+
+        // Circle (top-right) - key 2
+        DrawShapeIcon(ShapePathGenerator.ShapeType.Circle, 
+            new Vector2(startX + spacing, startY), iconSize);
+
+        // Triangle (bottom-left) - key 3
+        DrawShapeIcon(ShapePathGenerator.ShapeType.Triangle, 
+            new Vector2(startX, startY + spacing), iconSize);
+
+        // Star (bottom-right) - key 4
+        DrawShapeIcon(ShapePathGenerator.ShapeType.Star, 
+            new Vector2(startX + spacing, startY + spacing), iconSize);
+    }
+
+    private void DrawShapeIcon(ShapePathGenerator.ShapeType shape, Vector2 center, float size)
+    {
+        bool isSelected = shape == _selectedShape;
+        Color color = isSelected ? _shapeSelectedColor : _shapeColor;
+
+        GL.Begin(GL.LINES);
+        GL.Color(color);
+
+        float half = size * 0.5f;
+
+        switch (shape)
+        {
+            case ShapePathGenerator.ShapeType.Rectangle:
+                DrawLine(center + new Vector2(-half, -half), center + new Vector2(half, -half));
+                DrawLine(center + new Vector2(half, -half), center + new Vector2(half, half));
+                DrawLine(center + new Vector2(half, half), center + new Vector2(-half, half));
+                DrawLine(center + new Vector2(-half, half), center + new Vector2(-half, -half));
+                break;
+
+            case ShapePathGenerator.ShapeType.Circle:
+                int segments = 16;
+                for (int i = 0; i < segments; i++)
+                {
+                    float a1 = (i / (float)segments) * Mathf.PI * 2f;
+                    float a2 = ((i + 1) / (float)segments) * Mathf.PI * 2f;
+                    Vector2 p1 = center + new Vector2(Mathf.Cos(a1), Mathf.Sin(a1)) * half;
+                    Vector2 p2 = center + new Vector2(Mathf.Cos(a2), Mathf.Sin(a2)) * half;
+                    DrawLine(p1, p2);
+                }
+                break;
+
+            case ShapePathGenerator.ShapeType.Triangle:
+                Vector2 top = center + new Vector2(0, -half);
+                Vector2 bottomLeft = center + new Vector2(-half, half);
+                Vector2 bottomRight = center + new Vector2(half, half);
+                DrawLine(top, bottomRight);
+                DrawLine(bottomRight, bottomLeft);
+                DrawLine(bottomLeft, top);
+                break;
+
+            case ShapePathGenerator.ShapeType.Star:
+                int points = 5;
+                float outerR = half;
+                float innerR = half * 0.4f;
+                for (int i = 0; i < points * 2; i++)
+                {
+                    float a1 = (i / (float)(points * 2)) * Mathf.PI * 2f - Mathf.PI / 2f;
+                    float a2 = ((i + 1) / (float)(points * 2)) * Mathf.PI * 2f - Mathf.PI / 2f;
+                    float r1 = (i % 2 == 0) ? outerR : innerR;
+                    float r2 = ((i + 1) % 2 == 0) ? outerR : innerR;
+                    Vector2 p1 = center + new Vector2(Mathf.Cos(a1), Mathf.Sin(a1)) * r1;
+                    Vector2 p2 = center + new Vector2(Mathf.Cos(a2), Mathf.Sin(a2)) * r2;
+                    DrawLine(p1, p2);
+                }
+                break;
+        }
+
+        // Draw selection highlight box if selected
+        if (isSelected)
+        {
+            float boxSize = size * 0.7f;
+            DrawLine(center + new Vector2(-boxSize, -boxSize), center + new Vector2(boxSize, -boxSize));
+            DrawLine(center + new Vector2(boxSize, -boxSize), center + new Vector2(boxSize, boxSize));
+            DrawLine(center + new Vector2(boxSize, boxSize), center + new Vector2(-boxSize, boxSize));
+            DrawLine(center + new Vector2(-boxSize, boxSize), center + new Vector2(-boxSize, -boxSize));
+        }
+
+        GL.End();
+    }
+
+    private void DrawSelectedShapePreview()
+    {
+        // Draw a preview of the selected shape path in the work area
+        float w = _renderTexture.width;
+        float h = _renderTexture.height;
+
+        var preview = ShapePathGenerator.GetShapePreview(_selectedShape);
+        if (preview.Count < 2) return;
+
+        GL.Begin(GL.LINES);
+        GL.Color(new Color(_shapeSelectedColor.r, _shapeSelectedColor.g, _shapeSelectedColor.b, 0.3f));
+
+        for (int i = 1; i < preview.Count; i++)
+        {
+            Vector2 a = NormToPixel(preview[i - 1], w, h);
+            Vector2 b = NormToPixel(preview[i], w, h);
+            DrawLine(a, b);
+        }
+
+        GL.End();
+    }
+
     private Vector2 NormToPixel(Vector2 norm, float w, float h)
     {
         float innerW = (1f - 2f * MARGIN) * w;
@@ -283,23 +530,15 @@ public class CNCScreenDisplay : MonoBehaviour
         GL.Vertex3(b.x, b.y, 0f);
     }
 
-    /// <summary>
-    /// Creates an unlit GL material for immediate-mode drawing.
-    /// Uses the hidden Unity "Internal-Colored" shader which is always available.
-    /// </summary>
     private void CreateGLMaterial()
     {
         Shader shader = Shader.Find("Hidden/Internal-Colored");
         if (shader == null)
-        {
-            // Fallback: any unlit color shader
             shader = Shader.Find("Unlit/Color");
-        }
 
         if (shader == null)
         {
-            Debug.LogError("[CNCScreenDisplay] Could not find a GL material shader. " +
-                           "The screen display will not render.", this);
+            Debug.LogError("[CNCScreenDisplay] Could not find a GL material shader.", this);
             return;
         }
 

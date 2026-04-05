@@ -4,14 +4,15 @@ using TMPro;
 
 /// <summary>
 /// CNC-specific control panel. Extends <see cref="ControlPanel"/> with:
-///   • Start / Stop buttons that call <see cref="CNCMachine.StartCut"/> / <see cref="CNCMachine.StopCut"/>
-///   • Speed adjustment (increase / decrease cutting speed on the cutter)
-///   • State indicator text that mirrors the machine's current state
+///   - Start / Stop buttons that call <see cref="CNCMachine.StartCut"/> / <see cref="CNCMachine.StopCut"/>
+///   - Mode switch button to toggle between Manual and Auto modes
+///   - Speed adjustment (increase / decrease cutting speed on the cutter)
+///   - State and mode indicator text that mirrors the machine's current state
 ///
 /// Setup in the scene:
 ///   1. Place this on the ControlPanel.fbx GameObject (or a child).
 ///   2. Assign the <see cref="CNCMachine"/> and <see cref="CNCCutter"/> references.
-///   3. Wire the Start/Stop/SpeedUp/SpeedDown physical buttons to the
+///   3. Wire the Start/Stop/Mode/SpeedUp/SpeedDown physical buttons to the
 ///      corresponding public methods via their Interactable/OnClick events,
 ///      or via the inherited _onStartPressed / _onStopPressed UnityEvents.
 /// </summary>
@@ -40,17 +41,27 @@ public class CNCControlPanel : ControlPanel
     [Tooltip("Text element that shows the current machine state.")]
     [SerializeField] private TMP_Text _stateLabel;
 
+    [Tooltip("Text element that shows the current mode (Manual/Auto).")]
+    [SerializeField] private TMP_Text _modeLabel;
+
     [Tooltip("Text element that shows the current cutting speed.")]
     [SerializeField] private TMP_Text _speedLabel;
 
     [Tooltip("Image used as a status indicator light (green = cutting, red = idle).")]
     [SerializeField] private Image _statusIndicator;
 
-    [Header("Indicator Colors")]
+    [Tooltip("Image used as a mode indicator light.")]
+    [SerializeField] private Image _modeIndicator;
+
+    [Header("State Indicator Colors")]
     [SerializeField] private Color _colorIdle = Color.red;
     [SerializeField] private Color _colorPositioning = Color.yellow;
     [SerializeField] private Color _colorCutting = new Color(0f, 0.8f, 0f);
     [SerializeField] private Color _colorDone = Color.cyan;
+
+    [Header("Mode Indicator Colors")]
+    [SerializeField] private Color _colorManual = new Color(0.2f, 0.5f, 1f); // Blue
+    [SerializeField] private Color _colorAuto = new Color(0f, 0.8f, 0.4f);   // Green
 
     // ── Private state ─────────────────────────────────────────────────────────
 
@@ -76,45 +87,58 @@ public class CNCControlPanel : ControlPanel
     private void OnEnable()
     {
         if (_machine != null)
+        {
             _machine.OnStateChanged += HandleStateChanged;
+            _machine.OnModeChanged += HandleModeChanged;
+        }
     }
 
     private void OnDisable()
     {
         if (_machine != null)
+        {
             _machine.OnStateChanged -= HandleStateChanged;
+            _machine.OnModeChanged -= HandleModeChanged;
+        }
     }
 
     // ── ControlPanel overrides ────────────────────────────────────────────────
 
     public override void PressStart()
     {
+        Debug.Log("[CNCControlPanel] Start button pressed.");
         base.PressStart();
         _machine?.StartCut();
     }
 
     public override void PressStop()
     {
+        Debug.Log("[CNCControlPanel] Stop button pressed.");
         base.PressStop();
         _machine?.StopCut();
     }
 
-    /// <summary>Refreshes all display elements to reflect current machine state.</summary>
+    /// <summary>Refreshes all display elements to reflect current machine state and mode.</summary>
     public override void UpdateDisplay()
     {
         if (_machine == null) return;
 
         CNCMachine.CNCState state = _machine.CurrentState;
+        CNCMachine.CNCMode mode = _machine.CurrentMode;
 
         // State label
         if (_stateLabel != null)
             _stateLabel.text = state.ToString().ToUpper();
 
+        // Mode label
+        if (_modeLabel != null)
+            _modeLabel.text = mode.ToString().ToUpper();
+
         // Speed label
         if (_speedLabel != null)
             _speedLabel.text = $"SPD: {_currentSpeed:F2} m/s";
 
-        // Indicator colour
+        // State indicator colour
         if (_statusIndicator != null)
         {
             _statusIndicator.color = state switch
@@ -126,6 +150,54 @@ public class CNCControlPanel : ControlPanel
                 _                               => _colorIdle
             };
         }
+
+        // Mode indicator colour
+        if (_modeIndicator != null)
+        {
+            _modeIndicator.color = mode switch
+            {
+                CNCMachine.CNCMode.Manual => _colorManual,
+                CNCMachine.CNCMode.Auto   => _colorAuto,
+                _                         => _colorManual
+            };
+        }
+    }
+
+    // ── Mode control ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Toggles between Manual and Auto modes.
+    /// Call from the 'switch' button on the control panel.
+    /// </summary>
+    public void PressMode()
+    {
+        Debug.Log("[CNCControlPanel] Mode button pressed.");
+        if (_machine == null) return;
+
+        _machine.SwitchMode();
+        UpdateDisplay();
+    }
+
+    /// <summary>
+    /// Sets the machine to Manual mode.
+    /// </summary>
+    public void SetManualMode()
+    {
+        if (_machine == null) return;
+
+        _machine.SetMode(CNCMachine.CNCMode.Manual);
+        UpdateDisplay();
+    }
+
+    /// <summary>
+    /// Sets the machine to Auto mode.
+    /// </summary>
+    public void SetAutoMode()
+    {
+        if (_machine == null) return;
+
+        _machine.SetMode(CNCMachine.CNCMode.Auto);
+        UpdateDisplay();
     }
 
     // ── Speed control (call from physical panel buttons) ──────────────────────
@@ -153,11 +225,15 @@ public class CNCControlPanel : ControlPanel
         UpdateDisplay();
     }
 
+    private void HandleModeChanged(CNCMachine.CNCMode newMode)
+    {
+        UpdateDisplay();
+    }
+
     private void ApplySpeedToCutter()
     {
         if (_cutter == null) return;
 
-        // Use SerializedField reflection-free: expose a setter on CNCCutter
         _cutter.SetSpeed(_currentSpeed);
     }
 }
