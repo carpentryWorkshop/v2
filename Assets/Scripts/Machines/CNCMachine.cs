@@ -2,16 +2,20 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// State machine for the CNC router machine.
+/// State machine for the CNC router machine with Manual and Auto modes.
 /// External systems (control panel, task manager) call <see cref="StartCut"/> and
 /// <see cref="StopCut"/>; internal state transitions drive <see cref="CNCCutter"/>.
+///
+/// Modes:
+///   - Manual: User controls movement with keyboard (I/J/K/L/W/X)
+///   - Auto: Machine follows predefined shape paths automatically
 ///
 /// State flow:
 ///   Idle ──StartCut()──► Positioning ──Ready()──► Cutting ──StopCut()/done──► Done ──Reset()──► Idle
 /// </summary>
 public class CNCMachine : MonoBehaviour
 {
-    // ── State enum ────────────────────────────────────────────────────────────
+    // ── Enums ─────────────────────────────────────────────────────────────────
 
     public enum CNCState
     {
@@ -21,15 +25,30 @@ public class CNCMachine : MonoBehaviour
         Done
     }
 
+    public enum CNCMode
+    {
+        Manual,
+        Auto
+    }
+
     // ── Inspector ─────────────────────────────────────────────────────────────
 
     [Header("References")]
     [Tooltip("The CNCCutter component that physically moves the tool head.")]
     [SerializeField] private CNCCutter _cutter;
 
+    [Tooltip("The CNCAutoController for automatic shape cutting.")]
+    [SerializeField] private CNCAutoController _autoController;
+
+    [Tooltip("The CNCInputHandler for manual keyboard control.")]
+    [SerializeField] private CNCInputHandler _inputHandler;
+
     [Header("Behaviour")]
     [Tooltip("Seconds spent in the Positioning state before cutting begins.")]
     [SerializeField] [Range(0f, 5f)] private float _positioningDuration = 1f;
+
+    [Tooltip("Starting mode for the CNC machine.")]
+    [SerializeField] private CNCMode _startingMode = CNCMode.Manual;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -39,10 +58,22 @@ public class CNCMachine : MonoBehaviour
     /// <summary>Fires when the machine reaches the Done state.</summary>
     public event Action OnCutComplete;
 
+    /// <summary>Fires when the machine mode changes.</summary>
+    public event Action<CNCMode> OnModeChanged;
+
     // ── Properties ────────────────────────────────────────────────────────────
 
     /// <summary>Current state of the CNC machine.</summary>
     public CNCState CurrentState { get; private set; } = CNCState.Idle;
+
+    /// <summary>Current mode of the CNC machine (Manual or Auto).</summary>
+    public CNCMode CurrentMode { get; private set; } = CNCMode.Manual;
+
+    /// <summary>The CNCCutter component.</summary>
+    public CNCCutter Cutter => _cutter;
+
+    /// <summary>The CNCAutoController component.</summary>
+    public CNCAutoController AutoController => _autoController;
 
     // ── Private state ─────────────────────────────────────────────────────────
 
@@ -55,9 +86,24 @@ public class CNCMachine : MonoBehaviour
         if (_cutter == null)
             _cutter = GetComponentInChildren<CNCCutter>();
 
+        if (_autoController == null)
+            _autoController = GetComponent<CNCAutoController>();
+
+        if (_inputHandler == null)
+            _inputHandler = GetComponentInChildren<CNCInputHandler>();
+
         if (_cutter == null)
             Debug.LogWarning($"[CNCMachine] No CNCCutter found on {name} or its children. " +
                              "Assign it in the Inspector.", this);
+
+        CurrentMode = _startingMode;
+    }
+
+    private void Start()
+    {
+        // Ensure input handler starts disabled
+        if (_inputHandler != null)
+            _inputHandler.SetEnabled(false);
     }
 
     private void Update()
@@ -73,7 +119,47 @@ public class CNCMachine : MonoBehaviour
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Switches between Manual and Auto modes.
+    /// Can only switch when machine is in Idle state.
+    /// </summary>
+    public void SwitchMode()
+    {
+        if (CurrentState != CNCState.Idle)
+        {
+            Debug.Log($"[CNCMachine] SwitchMode() ignored — machine must be Idle. Current state: {CurrentState}");
+            return;
+        }
+
+        CurrentMode = CurrentMode == CNCMode.Manual ? CNCMode.Auto : CNCMode.Manual;
+        OnModeChanged?.Invoke(CurrentMode);
+
+        Debug.Log($"[CNCMachine] Mode switched to {CurrentMode}");
+    }
+
+    /// <summary>
+    /// Sets the mode directly.
+    /// Can only change when machine is in Idle state.
+    /// </summary>
+    public void SetMode(CNCMode mode)
+    {
+        if (CurrentState != CNCState.Idle)
+        {
+            Debug.Log($"[CNCMachine] SetMode() ignored — machine must be Idle. Current state: {CurrentState}");
+            return;
+        }
+
+        if (CurrentMode == mode) return;
+
+        CurrentMode = mode;
+        OnModeChanged?.Invoke(CurrentMode);
+
+        Debug.Log($"[CNCMachine] Mode set to {CurrentMode}");
+    }
+
+    /// <summary>
     /// Begins the cut sequence from Idle. Transitions through Positioning → Cutting.
+    /// In Manual mode, enables keyboard control.
+    /// In Auto mode, starts automatic shape cutting.
     /// No-op if the machine is not in the Idle state.
     /// </summary>
     public void StartCut()
@@ -84,6 +170,7 @@ public class CNCMachine : MonoBehaviour
             return;
         }
 
+        Debug.Log($"[CNCMachine] StartCut() in {CurrentMode} mode");
         TransitionTo(CNCState.Positioning);
     }
 
@@ -145,23 +232,69 @@ public class CNCMachine : MonoBehaviour
         {
             case CNCState.Idle:
                 _cutter?.SetEnabled(false);
+                if (_inputHandler != null)
+                    _inputHandler.SetEnabled(false);
                 break;
 
             case CNCState.Positioning:
                 _positioningTimer = 0f;
                 _cutter?.SetEnabled(false);
+                if (_inputHandler != null)
+                    _inputHandler.SetEnabled(false);
                 break;
 
             case CNCState.Cutting:
-                _cutter?.SetEnabled(true);
+                EnterCuttingState();
                 break;
 
             case CNCState.Done:
-                _cutter?.SetEnabled(false);
+                ExitCuttingState();
                 OnCutComplete?.Invoke();
                 // Auto-return to Idle so the panel can start a new cycle
                 Invoke(nameof(Reset), 0.1f);
                 break;
+        }
+    }
+
+    private void EnterCuttingState()
+    {
+        if (CurrentMode == CNCMode.Manual)
+        {
+            // Enable manual control
+            _cutter?.SetEnabled(true);
+            if (_inputHandler != null)
+                _inputHandler.SetEnabled(true);
+        }
+        else // Auto mode
+        {
+            // Start automatic cutting
+            _cutter?.SetEnabled(false); // Disable manual input
+            if (_inputHandler != null)
+                _inputHandler.SetEnabled(false);
+
+            if (_autoController != null)
+            {
+                _autoController.StartAutoCut();
+            }
+            else
+            {
+                Debug.LogWarning("[CNCMachine] Auto mode selected but no CNCAutoController assigned.");
+                // Fall back to manual
+                _cutter?.SetEnabled(true);
+            }
+        }
+    }
+
+    private void ExitCuttingState()
+    {
+        _cutter?.SetEnabled(false);
+
+        if (_inputHandler != null)
+            _inputHandler.SetEnabled(false);
+
+        if (CurrentMode == CNCMode.Auto && _autoController != null)
+        {
+            _autoController.StopAutoCut();
         }
     }
 
