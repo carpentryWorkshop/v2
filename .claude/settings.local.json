@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx unity-mcp-cli *)",
+      "Bash(curl -s http://localhost:22516/health)",
+      "Bash(curl -s http://localhost:22516/)",
+      "Bash(curl -s http://localhost:22516/mcp)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 setup_cnc.py)",
+      "Bash(python3 cnc_audit.py)",
+      "Bash(python3 cnc_complete.py)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "ai-game-developer"
+  ]
+}

@@ -3,9 +3,9 @@ using UnityEngine;
 
 /// <summary>
 /// Controls the CNC tool-head movement along three axes using keyboard input:
-///   - X-axis (J/L): Moves the cncCutter left/right
-///   - Z-axis (I/K): Moves the spindleHolder forward/backward  
-///   - Y-axis (W/X): Moves the spindleFinal up/down
+///   - Z-axis (I/K): Moves the cncCutter forward/backward
+///   - X-axis (J/L): Moves the spindleHolder left/right
+///   - Z-axis (R/F): Moves the spindleFinal depth
 ///
 /// The hierarchy is: cncCutter > spindleHolder > spindleFinal > meche
 /// Each transform only moves on its designated axis.
@@ -17,32 +17,36 @@ public class CNCCutter : MonoBehaviour
     // ── Inspector ─────────────────────────────────────────────────────────────
 
     [Header("Transform References")]
-    [Tooltip("Transform of cncCutter - moves on X-axis (left/right with J/L).")]
+    [Tooltip("Transform of cncCutter - moves on Z-axis.")]
     [SerializeField] private Transform _cutterTransform;
 
-    [Tooltip("Transform of spindleHolder - moves on Z-axis (forward/backward with I/K).")]
+    [Tooltip("Transform of spindleHolder - moves on X-axis.")]
     [SerializeField] private Transform _spindleHolderTransform;
 
-    [Tooltip("Transform of spindleFinal - moves on Y-axis (up/down with W/X).")]
+    [Tooltip("Transform of spindleFinal - moves on Z-axis.")]
     [SerializeField] private Transform _spindleTransform;
 
     [Header("Input")]
     [Tooltip("Input handler for keyboard controls. If null, searches in scene.")]
     [SerializeField] private CNCInputHandler _inputHandler;
 
-    [Header("Bounds")]
-    [Tooltip("ScriptableObject that defines work-area bounds and height limits.")]
-    [SerializeField] private CuttingPath _cuttingPath;
+    [Header("Movement Speeds")]
+    [Tooltip("Movement speed of cncCutter on local Z (units/second).")]
+    [SerializeField] [Range(0.01f, 1f)] private float _cutterZSpeed = 0.15f;
 
-    [Header("Movement")]
-    [Tooltip("Movement speed on X-axis (metres per second).")]
-    [SerializeField] [Range(0.01f, 1f)] private float _xSpeed = 0.15f;
+    [Tooltip("Movement speed of spindleHolder on local X (units/second).")]
+    [SerializeField] [Range(0.01f, 1f)] private float _spindleHolderXSpeed = 0.15f;
 
-    [Tooltip("Movement speed on Z-axis (metres per second).")]
-    [SerializeField] [Range(0.01f, 1f)] private float _zSpeed = 0.15f;
+    [Tooltip("Movement speed of spindleFinal on local Z (units/second).")]
+    [SerializeField] [Range(0.001f, 0.2f)] private float _spindleFinalZSpeed = 0.05f;
 
-    [Tooltip("Movement speed on Y-axis (metres per second).")]
-    [SerializeField] [Range(0.01f, 1f)] private float _ySpeed = 0.1f;
+    [Header("Axis Limits (Local)")]
+    [SerializeField] private float _cutterMinZ = -7f;
+    [SerializeField] private float _cutterMaxZ = 5f;
+    [SerializeField] private float _spindleHolderMinX = 0.0044f;
+    [SerializeField] private float _spindleHolderMaxX = 0.06139f;
+    [SerializeField] private float _spindleFinalMinZ = -0.02f;
+    [SerializeField] private float _spindleFinalMaxZ = -0.01602f;
 
     [Header("Debug")]
     [Tooltip("Draw the work-area bounds as a Gizmo in the Scene view.")]
@@ -64,8 +68,8 @@ public class CNCCutter : MonoBehaviour
     /// <summary>Combined tool position in local space.</summary>
     public Vector3 ToolPosition => GetToolPosition();
 
-    /// <summary>The CuttingPath ScriptableObject for bounds.</summary>
-    public CuttingPath CuttingPath => _cuttingPath;
+    /// <summary>Compatibility accessor kept for dependent scripts.</summary>
+    public CuttingPath CuttingPath => null;
 
     // ── Private state ─────────────────────────────────────────────────────────
 
@@ -87,11 +91,6 @@ public class CNCCutter : MonoBehaviour
     {
         if (!IsEnabled) return;
         if (_inputHandler == null) return;
-        if (_cuttingPath == null)
-        {
-            Debug.LogWarning("[CNCCutter] No CuttingPath assigned — cutter cannot move.", this);
-            return;
-        }
 
         MoveCutter();
     }
@@ -119,9 +118,10 @@ public class CNCCutter : MonoBehaviour
     /// </summary>
     public void SetSpeed(float speed)
     {
-        _xSpeed = Mathf.Max(0.001f, speed);
-        _zSpeed = Mathf.Max(0.001f, speed);
-        _ySpeed = Mathf.Max(0.001f, speed);
+        float safe = Mathf.Max(0.001f, speed);
+        _cutterZSpeed = safe;
+        _spindleHolderXSpeed = safe;
+        _spindleFinalZSpeed = safe;
     }
 
     /// <summary>
@@ -129,9 +129,9 @@ public class CNCCutter : MonoBehaviour
     /// </summary>
     public void SetAxisSpeed(float xSpeed, float ySpeed, float zSpeed)
     {
-        _xSpeed = Mathf.Max(0.001f, xSpeed);
-        _ySpeed = Mathf.Max(0.001f, ySpeed);
-        _zSpeed = Mathf.Max(0.001f, zSpeed);
+        _spindleHolderXSpeed = Mathf.Max(0.001f, xSpeed);
+        _spindleFinalZSpeed = Mathf.Max(0.001f, ySpeed);
+        _cutterZSpeed = Mathf.Max(0.001f, zSpeed);
     }
 
     /// <summary>
@@ -140,10 +140,11 @@ public class CNCCutter : MonoBehaviour
     /// </summary>
     public Vector2 GetNormalisedPosition()
     {
-        if (_cuttingPath == null) return Vector2.one * 0.5f;
-
         Vector3 pos = GetToolPosition();
-        return _cuttingPath.Normalise(new Vector2(pos.x, pos.z));
+        return new Vector2(
+            Mathf.InverseLerp(_spindleHolderMinX, _spindleHolderMaxX, pos.x),
+            Mathf.InverseLerp(_cutterMinZ, _cutterMaxZ, pos.z)
+        );
     }
 
     /// <summary>
@@ -179,9 +180,9 @@ public class CNCCutter : MonoBehaviour
 
     private Vector3 GetToolPosition()
     {
-        float x = _cutterTransform != null ? _cutterTransform.localPosition.x : 0f;
-        float z = _spindleHolderTransform != null ? _spindleHolderTransform.localPosition.z : 0f;
-        float y = _spindleTransform != null ? _spindleTransform.localPosition.y : 0f;
+        float x = _spindleHolderTransform != null ? _spindleHolderTransform.localPosition.x : 0f;
+        float z = _cutterTransform != null ? _cutterTransform.localPosition.z : 0f;
+        float y = _spindleTransform != null ? _spindleTransform.localPosition.z : 0f;
 
         return new Vector3(x, y, z);
     }
@@ -192,41 +193,30 @@ public class CNCCutter : MonoBehaviour
 
         if (input.sqrMagnitude < 0.001f) return;
 
-        // Move X-axis (cutter) with J/L
-        if (_cutterTransform != null && Mathf.Abs(input.x) > 0.001f)
+        // cncCutter moves on local Z only (I/K input).
+        if (_cutterTransform != null && Mathf.Abs(input.z) > 0.001f)
         {
             Vector3 cutterPos = _cutterTransform.localPosition;
-            cutterPos.x += input.x * _xSpeed * Time.deltaTime;
-
-            // Clamp to bounds
-            Vector2 clampedXZ = _cuttingPath.Clamp(new Vector2(cutterPos.x, 0f));
-            cutterPos.x = clampedXZ.x;
-
+            cutterPos.z += input.z * _cutterZSpeed * Time.deltaTime;
+            cutterPos.z = Mathf.Clamp(cutterPos.z, _cutterMinZ, _cutterMaxZ);
             _cutterTransform.localPosition = cutterPos;
         }
 
-        // Move Z-axis (spindleHolder) with I/K
-        if (_spindleHolderTransform != null && Mathf.Abs(input.z) > 0.001f)
+        // spindleHolder moves on local X only (J/L input).
+        if (_spindleHolderTransform != null && Mathf.Abs(input.x) > 0.001f)
         {
             Vector3 holderPos = _spindleHolderTransform.localPosition;
-            holderPos.z += input.z * _zSpeed * Time.deltaTime;
-
-            // Clamp to bounds
-            Vector2 clampedXZ = _cuttingPath.Clamp(new Vector2(0f, holderPos.z));
-            holderPos.z = clampedXZ.y;
-
+            holderPos.x += input.x * _spindleHolderXSpeed * Time.deltaTime;
+            holderPos.x = Mathf.Clamp(holderPos.x, _spindleHolderMinX, _spindleHolderMaxX);
             _spindleHolderTransform.localPosition = holderPos;
         }
 
-        // Move Y-axis (spindle) with W/X
+        // spindleFinal moves on local Z only (R/F input).
         if (_spindleTransform != null && Mathf.Abs(input.y) > 0.001f)
         {
             Vector3 spindlePos = _spindleTransform.localPosition;
-            spindlePos.y += input.y * _ySpeed * Time.deltaTime;
-
-            // Clamp to height bounds
-            spindlePos.y = _cuttingPath.ClampHeight(spindlePos.y);
-
+            spindlePos.z += input.y * _spindleFinalZSpeed * Time.deltaTime;
+            spindlePos.z = Mathf.Clamp(spindlePos.z, _spindleFinalMinZ, _spindleFinalMaxZ);
             _spindleTransform.localPosition = spindlePos;
         }
 
@@ -237,42 +227,8 @@ public class CNCCutter : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
-        if (!_showGizmos || _cuttingPath == null) return;
-
-        // Draw work-area bounds
-        Matrix4x4 oldMatrix = Gizmos.matrix;
-        Gizmos.matrix = transform.localToWorldMatrix;
-
-        Gizmos.color = new Color(0f, 1f, 0.4f, 0.5f);
-
-        Vector2 min = _cuttingPath.WorkAreaMin;
-        Vector2 max = _cuttingPath.WorkAreaMax;
-        float minY = _cuttingPath.MinHeight;
-        float maxY = _cuttingPath.MaxHeight;
-
-        // Draw bottom rectangle
-        Gizmos.DrawLine(new Vector3(min.x, minY, min.y), new Vector3(max.x, minY, min.y));
-        Gizmos.DrawLine(new Vector3(max.x, minY, min.y), new Vector3(max.x, minY, max.y));
-        Gizmos.DrawLine(new Vector3(max.x, minY, max.y), new Vector3(min.x, minY, max.y));
-        Gizmos.DrawLine(new Vector3(min.x, minY, max.y), new Vector3(min.x, minY, min.y));
-
-        // Draw top rectangle
-        Gizmos.DrawLine(new Vector3(min.x, maxY, min.y), new Vector3(max.x, maxY, min.y));
-        Gizmos.DrawLine(new Vector3(max.x, maxY, min.y), new Vector3(max.x, maxY, max.y));
-        Gizmos.DrawLine(new Vector3(max.x, maxY, max.y), new Vector3(min.x, maxY, max.y));
-        Gizmos.DrawLine(new Vector3(min.x, maxY, max.y), new Vector3(min.x, maxY, min.y));
-
-        // Draw vertical lines
-        Gizmos.DrawLine(new Vector3(min.x, minY, min.y), new Vector3(min.x, maxY, min.y));
-        Gizmos.DrawLine(new Vector3(max.x, minY, min.y), new Vector3(max.x, maxY, min.y));
-        Gizmos.DrawLine(new Vector3(max.x, minY, max.y), new Vector3(max.x, maxY, max.y));
-        Gizmos.DrawLine(new Vector3(min.x, minY, max.y), new Vector3(min.x, maxY, max.y));
-
-        // Draw cutter position marker
+        if (!_showGizmos) return;
         Gizmos.color = Color.red;
-        Vector3 toolPos = GetToolPosition();
-        Gizmos.DrawSphere(toolPos, 0.01f);
-
-        Gizmos.matrix = oldMatrix;
+        Gizmos.DrawSphere(transform.TransformPoint(GetToolPosition()), 0.01f);
     }
 }

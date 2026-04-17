@@ -28,11 +28,12 @@ public class CNCInputHandler : MonoBehaviour
     [Tooltip("Key to move right (positive X).")]
     [SerializeField] private KeyCode _rightKey = KeyCode.L;
 
+    // R/F used instead of W/X to avoid conflict with player WASD movement.
     [Tooltip("Key to move up (positive Y).")]
-    [SerializeField] private KeyCode _upKey = KeyCode.W;
+    [SerializeField] private KeyCode _upKey = KeyCode.R;
 
     [Tooltip("Key to move down (negative Y).")]
-    [SerializeField] private KeyCode _downKey = KeyCode.X;
+    [SerializeField] private KeyCode _downKey = KeyCode.F;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
