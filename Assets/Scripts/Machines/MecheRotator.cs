@@ -22,8 +22,8 @@ public class MecheRotator : MonoBehaviour
     [Tooltip("Rotation speed in RPM (revolutions per minute).")]
     [SerializeField] [Range(100f, 10000f)] private float _rpm = 3000f;
 
-    // Hardcoded to local Y — drill bits spin around their vertical axis.
-    private readonly Vector3 _rotationAxis = Vector3.up;
+    // Hardcoded to local Z as requested for CNC test setup.
+    private readonly Vector3 _rotationAxis = Vector3.forward;
 
     [Tooltip("Spin-up time in seconds (how long to reach full speed).")]
     [SerializeField] [Range(0f, 2f)] private float _spinUpTime = 0.5f;
