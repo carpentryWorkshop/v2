@@ -1,0 +1,13 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "mcp": {
+        "unity": {
+            "type": "local",
+            "command": [
+                "/home/iyed/.unity/relay/relay_linux",
+                "--mcp"
+            ],
+            "enabled": true
+        }
+    }
+}
