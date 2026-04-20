@@ -4,8 +4,8 @@ public class CNC_SpindleFinalAxisZ : MonoBehaviour
 {
     [Header("Movement")]
     [SerializeField] private float speed = 0.01f;
-    [SerializeField] private KeyCode positiveKey = KeyCode.R;
-    [SerializeField] private KeyCode negativeKey = KeyCode.F;
+    [SerializeField] private KeyCode positiveKey = KeyCode.O;
+    [SerializeField] private KeyCode negativeKey = KeyCode.P;
 
     [Header("Z Limits")]
     [SerializeField] private float minZ = -0.02f;

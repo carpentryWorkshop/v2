@@ -10,6 +10,8 @@ public static class CNC_TestSetupAutoAttach
         AttachTo("spindleFinal", typeof(CNC_SpindleFinalAxisZ));
         AttachTo("meche", typeof(CNC_MecheRotation));
 
+        AttachToAllMachines<CNCManualWoodEngraver>();
+
         DisableLegacyIfPresent<CNCCutter>("cncCutter");
         DisableLegacyIfPresent<MecheRotator>("meche");
     }
@@ -40,6 +42,23 @@ public static class CNC_TestSetupAutoAttach
         {
             legacy.enabled = false;
             Debug.Log($"[CNC_TestSetupAutoAttach] Disabled legacy {typeof(T).Name} on {gameObjectName}");
+        }
+    }
+
+    private static void AttachToAllMachines<T>() where T : Component
+    {
+        CNCMachine[] machines = Object.FindObjectsOfType<CNCMachine>(true);
+        for (int i = 0; i < machines.Length; i++)
+        {
+            CNCMachine machine = machines[i];
+            if (machine == null)
+                continue;
+
+            if (machine.GetComponent<T>() == null)
+            {
+                machine.gameObject.AddComponent<T>();
+                Debug.Log($"[CNC_TestSetupAutoAttach] Added {typeof(T).Name} to {machine.name}");
+            }
         }
     }
 }

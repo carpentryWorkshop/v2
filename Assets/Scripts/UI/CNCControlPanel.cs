@@ -27,6 +27,9 @@ public class CNCControlPanel : ControlPanel
     [Tooltip("The CNCCutter whose speed this panel can adjust.")]
     [SerializeField] private CNCCutter _cutter;
 
+    [Tooltip("Optional WoodSpawner to force wood spawn/hide from panel actions.")]
+    [SerializeField] private WoodSpawner _woodSpawner;
+
     [Header("Speed Settings")]
     [Tooltip("Amount added/subtracted from cutter speed per button press.")]
     [SerializeField] [Range(0.01f, 0.2f)] private float _speedStep = 0.05f;
@@ -79,6 +82,9 @@ public class CNCControlPanel : ControlPanel
         if (_machine == null)
             Debug.LogWarning("[CNCControlPanel] No CNCMachine assigned or found in parent.", this);
 
+        if (_woodSpawner == null)
+            _woodSpawner = GetComponentInParent<WoodSpawner>();
+
         // Read the starting speed from the cutter if possible
         _currentSpeed = _minSpeed + (_maxSpeed - _minSpeed) * 0.5f; // default: midpoint
         ApplySpeedToCutter();
@@ -108,6 +114,7 @@ public class CNCControlPanel : ControlPanel
     {
         Debug.Log("[CNCControlPanel] Start button pressed.");
         base.PressStart();
+
         _machine?.StartCut();
     }
 
@@ -116,6 +123,7 @@ public class CNCControlPanel : ControlPanel
         Debug.Log("[CNCControlPanel] Stop button pressed.");
         base.PressStop();
         _machine?.StopCut();
+
     }
 
     /// <summary>Refreshes all display elements to reflect current machine state and mode.</summary>
