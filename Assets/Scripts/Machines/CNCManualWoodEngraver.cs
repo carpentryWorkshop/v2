@@ -18,13 +18,13 @@ public class CNCManualWoodEngraver : MonoBehaviour
     [SerializeField] [Range(0.001f, 0.05f)] private float _contactRadius = 0.012f;
 
     [Tooltip("Max distance from cutter tip to wood surface for engraving.")]
-    [SerializeField] [Range(0.001f, 0.06f)] private float _maxEngraveDistance = 0.025f;
+    [SerializeField] [Range(0.001f, 0.06f)] private float _maxEngraveDistance = 0.03f;
 
     [Tooltip("Depth parameter passed to WoodPiece gravure.")]
-    [SerializeField] [Range(0.0001f, 0.02f)] private float _engraveDepth = 0.0025f;
+    [SerializeField] [Range(0.0001f, 0.02f)] private float _engraveDepth = 0.004f;
 
     [Tooltip("Brush size parameter passed to WoodPiece gravure.")]
-    [SerializeField] [Range(0.0005f, 0.03f)] private float _brushSize = 0.004f;
+    [SerializeField] [Range(0.0005f, 0.03f)] private float _brushSize = 0.007f;
 
     [Header("Particles (optional)")]
     [Tooltip("If true, the script creates a runtime particle system when none is assigned.")]

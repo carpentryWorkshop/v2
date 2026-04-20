@@ -50,6 +50,9 @@ public class CNCMachine : MonoBehaviour
     [Tooltip("Starting mode for the CNC machine.")]
     [SerializeField] private CNCMode _startingMode = CNCMode.Manual;
 
+    [Tooltip("If true, the machine starts cutting automatically on scene start.")]
+    [SerializeField] private bool _startCutOnStart = true;
+
     // ── Events ────────────────────────────────────────────────────────────────
 
     /// <summary>Fires whenever the machine transitions to a new state.</summary>
@@ -78,6 +81,7 @@ public class CNCMachine : MonoBehaviour
     // ── Private state ─────────────────────────────────────────────────────────
 
     private float _positioningTimer;
+    private const string MachineStateLogTag = "__MACHINE_STATE";
 
     // ── Unity lifecycle ───────────────────────────────────────────────────────
 
@@ -97,6 +101,7 @@ public class CNCMachine : MonoBehaviour
                              "Assign it in the Inspector.", this);
 
         CurrentMode = _startingMode;
+        LogMachineState("Awake");
     }
 
     private void Start()
@@ -104,6 +109,11 @@ public class CNCMachine : MonoBehaviour
         // Ensure input handler starts disabled
         if (_inputHandler != null)
             _inputHandler.SetEnabled(false);
+
+        if (_startCutOnStart)
+        {
+            StartCut();
+        }
     }
 
     private void Update()
@@ -127,6 +137,7 @@ public class CNCMachine : MonoBehaviour
         if (CurrentState != CNCState.Idle)
         {
             Debug.Log($"[CNCMachine] SwitchMode() ignored — machine must be Idle. Current state: {CurrentState}");
+            LogMachineState("SwitchMode ignored (not idle)");
             return;
         }
 
@@ -134,6 +145,7 @@ public class CNCMachine : MonoBehaviour
         OnModeChanged?.Invoke(CurrentMode);
 
         Debug.Log($"[CNCMachine] Mode switched to {CurrentMode}");
+        LogMachineState("SwitchMode");
     }
 
     /// <summary>
@@ -145,15 +157,21 @@ public class CNCMachine : MonoBehaviour
         if (CurrentState != CNCState.Idle)
         {
             Debug.Log($"[CNCMachine] SetMode() ignored — machine must be Idle. Current state: {CurrentState}");
+            LogMachineState("SetMode ignored (not idle)");
             return;
         }
 
-        if (CurrentMode == mode) return;
+        if (CurrentMode == mode)
+        {
+            LogMachineState("SetMode ignored (already set)");
+            return;
+        }
 
         CurrentMode = mode;
         OnModeChanged?.Invoke(CurrentMode);
 
         Debug.Log($"[CNCMachine] Mode set to {CurrentMode}");
+        LogMachineState("SetMode");
     }
 
     /// <summary>
@@ -167,10 +185,12 @@ public class CNCMachine : MonoBehaviour
         if (CurrentState != CNCState.Idle)
         {
             Debug.Log($"[CNCMachine] StartCut() ignored — current state is {CurrentState}.");
+            LogMachineState("StartCut ignored (not idle)");
             return;
         }
 
         Debug.Log($"[CNCMachine] StartCut() in {CurrentMode} mode");
+        LogMachineState("StartCut requested");
         TransitionTo(CNCState.Positioning);
     }
 
@@ -183,9 +203,11 @@ public class CNCMachine : MonoBehaviour
         if (CurrentState != CNCState.Cutting && CurrentState != CNCState.Positioning)
         {
             Debug.Log($"[CNCMachine] StopCut() ignored — current state is {CurrentState}.");
+            LogMachineState("StopCut ignored (not cutting/positioning)");
             return;
         }
 
+        LogMachineState("StopCut requested");
         TransitionTo(CNCState.Done);
     }
 
@@ -224,6 +246,7 @@ public class CNCMachine : MonoBehaviour
         CurrentState = next;
         EnterState(next);
         OnStateChanged?.Invoke(next);
+        LogMachineState($"TransitionTo {next}");
     }
 
     private void EnterState(CNCState state)
@@ -308,5 +331,15 @@ public class CNCMachine : MonoBehaviour
     {
         // Reserved for per-state cleanup if needed in future phases
         _ = state;
+    }
+
+    private void LogMachineState(string context)
+    {
+        bool manualActive = CurrentMode == CNCMode.Manual;
+        bool startCutActive = CurrentState == CNCState.Positioning || CurrentState == CNCState.Cutting;
+        bool cuttingActive = CurrentState == CNCState.Cutting;
+
+        Debug.Log($"[{MachineStateLogTag}] {context} | state={CurrentState} mode={CurrentMode} " +
+                  $"startCutActive={startCutActive} manualActive={manualActive} cuttingActive={cuttingActive}");
     }
 }

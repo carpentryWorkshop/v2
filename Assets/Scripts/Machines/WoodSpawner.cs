@@ -1,8 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Manages the wood piece in the CNC machine.
-/// Resets the wood to a fresh state when the machine starts a new cut.
+/// Manages a persistent wood piece in the CNC machine.
+/// The wood is always present and kept on top of the CNC base.
 ///
 /// Attach this to the CNC machine root alongside <see cref="CNCMachine"/>.
 /// </summary>
@@ -21,12 +21,8 @@ public class WoodSpawner : MonoBehaviour
     [SerializeField] private Transform _spawnPoint;
 
     [Header("Settings")]
-    [Tooltip("If true, automatically resets wood when CNC machine starts.")]
-    [SerializeField] private bool _resetOnStart = true;
-
-    [Header("Manual Mode")]
-    [Tooltip("If true, wood is re-centered under the cutter when a manual cut starts.")]
-    [SerializeField] private bool _spawnUnderCutterInManualMode = true;
+    [Tooltip("If true, wood XZ follows the cutter reference. If false, manual XZ from WoodVisualThin is preserved.")]
+    [SerializeField] private bool _placeUnderCutterXZ = true;
 
     [Tooltip("Tip transform of the meche/cutter. If null, resolved automatically.")]
     [SerializeField] private Transform _manualCutterTip;
@@ -37,14 +33,8 @@ public class WoodSpawner : MonoBehaviour
     [Tooltip("CNC base transform used to place wood height on top surface.")]
     [SerializeField] private Transform _cncBase;
 
-    [Tooltip("Keep Y from spawn point (recommended for this scene).")]
-    [SerializeField] private bool _keepSpawnPointHeight = true;
-
-    [Tooltip("Used only when Keep Spawn Point Height is off.")]
-    [SerializeField] private float _manualSpawnVerticalOffset = -0.6f;
-
-    [Tooltip("Extra height above CNC base surface.")]
-    [SerializeField] private float _baseSurfaceOffset = 0.005f;
+    [Tooltip("Extra height above the CNC base top surface.")]
+    [SerializeField] private float _baseSurfaceOffset = 0.003f;
 
     // ── Properties ────────────────────────────────────────────────────────────
 
@@ -57,7 +47,7 @@ public class WoodSpawner : MonoBehaviour
     {
         ResolveReferences();
 
-        PlaceWoodOnBase();
+        ForcePlaceWoodOnBase();
     }
 
     private void OnEnable()
@@ -78,12 +68,17 @@ public class WoodSpawner : MonoBehaviour
     {
         ResolveReferences();
 
-        PlaceWoodOnBase();
+        ForcePlaceWoodOnBase();
     }
 
     private void Update()
     {
-        // Intentionally left empty: wood is always present on the CNC base.
+        // Keep persistent behavior robust even if external scripts touched the plank.
+        if (_woodPiece == null)
+            return;
+
+        if (!_woodPiece.gameObject.activeSelf)
+            _woodPiece.gameObject.SetActive(true);
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -94,38 +89,7 @@ public class WoodSpawner : MonoBehaviour
     /// </summary>
     public void ResetWood()
     {
-        ResolveReferences();
-
-        if (_woodPiece == null)
-        {
-            Debug.LogWarning("[WoodSpawner] No wood piece assigned to reset.", this);
-            return;
-        }
-
-        Debug.Log("[WoodSpawner] Resetting wood piece to fresh state.");
-
-        // Update spawn point position if it has moved
-        Vector3 targetSpawnPosition = _woodPiece.transform.position;
-        Vector3 targetSpawnRotation = _woodPiece.transform.eulerAngles;
-
-        if (_spawnPoint != null)
-        {
-            targetSpawnPosition = _spawnPoint.position;
-            targetSpawnRotation = _spawnPoint.eulerAngles;
-        }
-
-        if (ShouldSpawnUnderCutter())
-        {
-            targetSpawnPosition = ComputeManualSpawnPosition(targetSpawnPosition);
-        }
-
-        _woodPiece.SetSpawnPoint(targetSpawnPosition, targetSpawnRotation);
-
-        if (!_woodPiece.gameObject.activeSelf)
-            _woodPiece.gameObject.SetActive(true);
-
-        _woodPiece.ResetPiece();
-        _woodPiece.PlaceInMachine();
+        ForcePlaceWoodOnBase();
     }
 
     /// <summary>
@@ -149,65 +113,6 @@ public class WoodSpawner : MonoBehaviour
     private void HandleStateChanged(CNCMachine.CNCState newState)
     {
         _ = newState;
-    }
-
-    private bool ShouldSpawnUnderCutter()
-    {
-        ResolveReferences();
-
-        return _spawnUnderCutterInManualMode
-               && _machine != null
-               && _machine.CurrentMode == CNCMachine.CNCMode.Manual;
-    }
-
-    private Vector3 ComputeManualSpawnPosition(Vector3 fallback)
-    {
-        ResolveReferences();
-
-        if (_manualCutterTip == null && _cutterReference == null)
-            return fallback;
-
-        Vector3 target = fallback;
-        Transform xyRef = _cutterReference != null ? _cutterReference : _manualCutterTip;
-        target.x = xyRef.position.x;
-        target.z = xyRef.position.z;
-
-        if (_keepSpawnPointHeight)
-        {
-            float baseY = _cncBase != null ? _cncBase.position.y : fallback.y;
-            float cutterY = (_cutterReference != null ? _cutterReference.position.y : _manualCutterTip.position.y);
-
-            float minY = Mathf.Min(baseY, cutterY);
-            float maxY = Mathf.Max(baseY, cutterY);
-            target.y = Mathf.Clamp(Mathf.Lerp(baseY, cutterY, 0.5f) + _baseSurfaceOffset, minY + 0.002f, maxY - 0.002f);
-        }
-        else
-        {
-            float cutterY = (_cutterReference != null ? _cutterReference.position.y : _manualCutterTip.position.y);
-            target.y = cutterY + _manualSpawnVerticalOffset;
-        }
-
-        return target;
-    }
-
-    private float ComputeBaseTopY(float fallbackY)
-    {
-        if (_cncBase == null)
-            return fallbackY;
-
-        Renderer baseRenderer = _cncBase.GetComponentInChildren<Renderer>();
-        if (baseRenderer == null)
-            return _cncBase.position.y + _baseSurfaceOffset;
-
-        float woodHalfHeight = 0.03f;
-        if (_woodPiece != null)
-        {
-            BoxCollider box = _woodPiece.GetComponent<BoxCollider>();
-            if (box != null)
-                woodHalfHeight = Mathf.Max(0.005f, box.size.z * 0.5f);
-        }
-
-        return baseRenderer.bounds.max.y + woodHalfHeight + _baseSurfaceOffset;
     }
 
     private void ResolveReferences()
@@ -243,28 +148,38 @@ public class WoodSpawner : MonoBehaviour
         }
     }
 
-    private void PlaceWoodOnBase()
+    private void ForcePlaceWoodOnBase()
     {
+        ResolveReferences();
+
         if (_woodPiece == null)
             return;
 
-        Vector3 targetSpawnPosition = _woodPiece.transform.position;
-        Vector3 targetSpawnRotation = _woodPiece.transform.eulerAngles;
+        float woodHalfY = 0.03f;
+        BoxCollider woodBox = _woodPiece.GetComponent<BoxCollider>();
+        if (woodBox != null)
+            woodHalfY = Mathf.Max(0.01f, woodBox.size.y * 0.5f);
 
-        if (_spawnPoint != null)
+        Vector3 targetPosition = _woodPiece.transform.position;
+        if (_cncBase != null)
         {
-            targetSpawnPosition = _spawnPoint.position;
-            targetSpawnRotation = _spawnPoint.eulerAngles;
+            Renderer baseRenderer = _cncBase.GetComponentInChildren<Renderer>();
+            float baseTopY = baseRenderer != null ? baseRenderer.bounds.max.y : _cncBase.position.y;
+            targetPosition.y = baseTopY + woodHalfY + _baseSurfaceOffset;
+
+            if (_placeUnderCutterXZ && (_cutterReference != null || _manualCutterTip != null))
+            {
+                Transform refXZ = _cutterReference != null ? _cutterReference : _manualCutterTip;
+                targetPosition.x = refXZ.position.x;
+                targetPosition.z = refXZ.position.z;
+            }
+            // else: keep current XZ (designer-authored placement)
         }
 
-        // Always place the plank on the CNC base under cutter area.
-        targetSpawnPosition = ComputeManualSpawnPosition(targetSpawnPosition);
+        float yaw = _cncBase != null ? _cncBase.eulerAngles.y : _woodPiece.transform.eulerAngles.y;
+        Vector3 targetRotation = new Vector3(0f, yaw, 0f);
 
-        // Always keep plank flat (not standing up).
-        float yaw = _cncBase != null ? _cncBase.eulerAngles.y : transform.eulerAngles.y;
-        targetSpawnRotation = new Vector3(0f, yaw, 0f);
-
-        _woodPiece.SetSpawnPoint(targetSpawnPosition, targetSpawnRotation);
+        _woodPiece.SetSpawnPoint(targetPosition, targetRotation);
         _woodPiece.ResetPiece();
         _woodPiece.PlaceInMachine();
     }
