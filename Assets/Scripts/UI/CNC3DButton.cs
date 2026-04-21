@@ -110,6 +110,12 @@ public class CNC3DButton : Interactable
         Press();
     }
 
+    private void OnMouseDown()
+    {
+        // Allows direct mouse click on this 3D button's collider.
+        Press();
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
