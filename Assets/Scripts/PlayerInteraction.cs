@@ -1,64 +1,75 @@
 using UnityEngine;
 
+/// <summary>
+/// Handles player input for grabbing planks and pressing buttons.
+/// Both playerCamera and handPoser are auto-found at Awake; assign them in
+/// the Inspector to override (useful if the hierarchy has multiple cameras).
+/// </summary>
 public class PlayerInteraction : MonoBehaviour
 {
     public float interactDistance = 3f;
-    public Camera playerCamera;
-    public HandPoser handPoser;
+
+    // Optional Inspector overrides — auto-found if left blank.
+    [SerializeField] private Camera    playerCamera;
+    [SerializeField] private HandPoser handPoser;
 
     private PlankInteractable heldPlank;
 
+    void Awake()
+    {
+        // Find the main camera if not assigned.
+        if (playerCamera == null)
+            playerCamera = Camera.main;
+
+        if (playerCamera == null)
+            Debug.LogWarning("[PlayerInteraction] No camera found. Assign playerCamera in the Inspector.", this);
+
+        // Find HandPoser anywhere in the scene if not assigned.
+        if (handPoser == null)
+            handPoser = FindObjectOfType<HandPoser>();
+
+        if (handPoser == null)
+            Debug.LogWarning("[PlayerInteraction] No HandPoser found in the scene.", this);
+    }
+
     void Update()
     {
-        // E key — curl all fingers + try grab
+        // E — grab/drop + curl fingers
         if (Input.GetKeyDown(KeyCode.E))
         {
-            if (handPoser != null)
-                handPoser.SetPose("Grab");
+            handPoser?.SetPose("Grab");
 
-            if (heldPlank == null)
-                TryGrab();
-            else
-                Drop();
+            if (heldPlank == null) TryGrab();
+            else                   Drop();
         }
 
-        // Release E — open fingers (only if not holding plank)
         if (Input.GetKeyUp(KeyCode.E))
         {
             if (heldPlank == null)
-            {
-                if (handPoser != null)
-                    handPoser.SetPose("Open");
-            }
+                handPoser?.SetPose("Open");
         }
 
-        // P key — point index finger + try press button
+        // P — point + press button
         if (Input.GetKeyDown(KeyCode.P))
         {
-            if (handPoser != null)
-                handPoser.SetPose("Point");
-
+            handPoser?.SetPose("Point");
             TryPressButton();
         }
 
-        // Release P — go back to open
         if (Input.GetKeyUp(KeyCode.P))
-        {
-            if (handPoser != null)
-                handPoser.SetPose("Open");
-        }
+            handPoser?.SetPose("Open");
     }
 
     void TryGrab()
     {
-        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
-        RaycastHit hit;
+        if (playerCamera == null) return;
 
-        if (Physics.Raycast(ray, out hit, interactDistance))
+        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
+
+        if (Physics.Raycast(ray, out RaycastHit hit, interactDistance))
         {
             Debug.Log("Hit: " + hit.collider.name);
             PlankInteractable plank = hit.collider.GetComponent<PlankInteractable>();
-
             if (plank != null)
             {
                 heldPlank = plank;
@@ -69,27 +80,23 @@ public class PlayerInteraction : MonoBehaviour
 
     void TryPressButton()
     {
-        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
-        RaycastHit hit;
+        if (playerCamera == null) return;
 
-        if (Physics.Raycast(ray, out hit, interactDistance))
+        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
+
+        if (Physics.Raycast(ray, out RaycastHit hit, interactDistance))
         {
             Debug.Log("Button hit: " + hit.collider.name);
             Interactable interactable = hit.collider.GetComponent<Interactable>();
-
-            if (interactable != null)
-                interactable.Interact();
+            interactable?.Interact();
         }
     }
 
     void Drop()
     {
-        if (heldPlank != null)
-        {
-            heldPlank.PutDown();
-            heldPlank = null;
-            if (handPoser != null)
-                handPoser.SetPose("Open");
-        }
+        if (heldPlank == null) return;
+        heldPlank.PutDown();
+        heldPlank = null;
+        handPoser?.SetPose("Open");
     }
 }

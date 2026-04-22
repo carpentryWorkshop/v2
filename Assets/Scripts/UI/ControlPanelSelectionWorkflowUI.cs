@@ -3,10 +3,10 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Orchestrates the strict UI flow for the machine screen:
-/// 1) btn3 click opens SelectionPanel
-/// 2) logo1/logo2 click stores selected logo sprite from clicked button image
-/// 3) SelectionPanel hides and WorkflowPanel shows
+/// Orchestrates the UI flow for the machine screen panels.
+/// When CNC2UIManager is present in the scene, panel switching is deferred to
+/// the CNC2 state machine. Logo selections are forwarded to CNC2LogoManager so
+/// the state machine can advance correctly.
 /// </summary>
 public class ControlPanelSelectionWorkflowUI : MonoBehaviour
 {
@@ -26,26 +26,33 @@ public class ControlPanelSelectionWorkflowUI : MonoBehaviour
     [SerializeField] private Button _logo1Button;
     [SerializeField] private Button _logo2Button;
 
-    /// <summary>
-    /// Last logo sprite selected by the user in SelectionPanel.
-    /// </summary>
+    /// <summary>Last logo sprite selected by the user in SelectionPanel.</summary>
     public Sprite SelectedLogoSprite { get; private set; }
 
-    /// <summary>
-    /// Raised after a logo has been selected and panels switched to workflow.
-    /// </summary>
+    /// <summary>Raised after a logo has been selected and panels switched to workflow.</summary>
     public event Action<Sprite> OnLogoSelected;
+
+    // CNC2 state-machine components – auto-found; presence suppresses direct panel control
+    private CNC2UIManager    _cnc2UIManager;
+    private CNC2LogoManager  _cnc2LogoManager;
 
     private void Awake()
     {
         ResolveMissingReferences();
         ValidateReferences();
 
-        if (_selectionPanel != null)
-            _selectionPanel.SetActive(_showSelectionPanelOnStart);
+        _cnc2UIManager   = FindFirstObjectByType<CNC2UIManager>();
+        _cnc2LogoManager = FindFirstObjectByType<CNC2LogoManager>();
 
-        if (_workflowPanel != null)
-            _workflowPanel.SetActive(false);
+        // Only take ownership of panel visibility when no state machine is driving it
+        if (_cnc2UIManager == null)
+        {
+            if (_selectionPanel != null)
+                _selectionPanel.SetActive(_showSelectionPanelOnStart);
+
+            if (_workflowPanel != null)
+                _workflowPanel.SetActive(false);
+        }
     }
 
     private void OnEnable()
@@ -74,7 +81,11 @@ public class ControlPanelSelectionWorkflowUI : MonoBehaviour
 
     public void ShowSelectionPanel()
     {
-        SetExclusivePanel(_selectionPanel);
+        // When CNC2UIManager is present, the state machine drives panel visibility.
+        // Calling SetExclusivePanel here would hide the StartPanel that CNC2UIManager
+        // just activated, so we skip it.
+        if (_cnc2UIManager == null)
+            SetExclusivePanel(_selectionPanel);
 
         Debug.Log("[ControlPanelSelectionWorkflowUI] btn3 clicked -> SelectionPanel shown.", this);
     }
@@ -113,7 +124,18 @@ public class ControlPanelSelectionWorkflowUI : MonoBehaviour
 
         SelectedLogoSprite = sourceImage != null ? sourceImage.sprite : null;
 
-        SetExclusivePanel(_workflowPanel);
+        // Forward the selection to CNC2LogoManager so the state machine advances
+        // from Idle → LogoSelected.  Without this, Switch and Start are both ignored.
+        if (_cnc2LogoManager != null)
+        {
+            int logoIndex = (clickedButton == _logo1Button) ? 0 : 1;
+            _cnc2LogoManager.SelectLogoByIndex(logoIndex);
+        }
+
+        // Only switch panels directly when CNC2UIManager is not managing them.
+        // When it is, the state machine will show WorkflowPanel on ModeSelected.
+        if (_cnc2UIManager == null)
+            SetExclusivePanel(_workflowPanel);
 
         OnLogoSelected?.Invoke(SelectedLogoSprite);
         Debug.Log("[ControlPanelSelectionWorkflowUI] Logo clicked -> WorkflowPanel shown.", this);
