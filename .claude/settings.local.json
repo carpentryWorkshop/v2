@@ -8,7 +8,22 @@
       "Bash(python3 -c ' *)",
       "Bash(python3 setup_cnc.py)",
       "Bash(python3 cnc_audit.py)",
-      "Bash(python3 cnc_complete.py)"
+      "Bash(python3 cnc_complete.py)",
+      "mcp__ai-game-developer__script-execute",
+      "mcp__ai-game-developer__console-get-logs",
+      "mcp__ai-game-developer__scene-get-data",
+      "mcp__ai-game-developer__gameobject-find",
+      "mcp__ai-game-developer__gameobject-component-get",
+      "mcp__ai-game-developer__assets-refresh",
+      "mcp__ai-game-developer__scene-save",
+      "Bash(where unity-mcp-cli *)",
+      "Bash(grep -E \"\\\\.cs$\")",
+      "Bash(unity-mcp-cli run-tool *)",
+      "Bash(echo \"exit: $?\")",
+      "Read(//tmp/**)",
+      "Bash(python3 *)",
+      "Bash(powershell -Command 'Get-Content '\\\\''C:/Users/ameni/AppData/Local/Unity/Editor/Editor.log'\\\\'' -Tail 200 | Where-Object { \\($_ -match '\\\\''Exception|NullRef'\\\\''\\) -and $_ -notmatch '\\\\''McpTool|ping|IvanMurzak'\\\\'' }')",
+      "Bash(powershell *)"
     ]
   },
   "enableAllProjectMcpServers": true,

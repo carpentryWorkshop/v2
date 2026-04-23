@@ -1,0 +1,1 @@
+{"csharpCode":"using UnityEngine;\nusing UnityEditor;\nusing UnityEditor.SceneManagement;\npublic class Script {\n  public static object Main() {\n    EditorSceneManager.SaveOpenScenes();\n    return \"Scene saved.\";\n  }\n}"}

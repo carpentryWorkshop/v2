@@ -15,6 +15,10 @@ public class ControlPanelWorkflowStartButton : MonoBehaviour
     [SerializeField] private ControlPanelSelectionWorkflowUI _workflowUI;
     [SerializeField] private CNCMachine _machine;
 
+    // CNC2 state machine – auto-found; when present, TryStart() is called instead
+    // of CNCMachine.StartCut() so that ManualRunning/AutoRunning are entered properly.
+    private CNC2Controller _cnc2Controller;
+
     [Header("Workflow Events")]
     [SerializeField] private SpriteEvent _onStartWorkflow;
 
@@ -30,6 +34,8 @@ public class ControlPanelWorkflowStartButton : MonoBehaviour
 
         if (_workflowUI == null)
             Debug.LogWarning("[ControlPanelWorkflowStartButton] Workflow UI controller is not assigned.", this);
+
+        _cnc2Controller = FindFirstObjectByType<CNC2Controller>();
     }
 
     private void OnEnable()
@@ -46,15 +52,26 @@ public class ControlPanelWorkflowStartButton : MonoBehaviour
 
     public void HandleStartClicked()
     {
-        Sprite selectedLogo = _workflowUI != null ? _workflowUI.SelectedLogoSprite : null;
+        // CNC2 path: delegate to the state machine so ManualRunning/AutoRunning
+        // is properly entered and the spindle/engraver sub-systems are activated.
+        if (_cnc2Controller != null)
+        {
+            _cnc2Controller.TryStart();
 
-        if (selectedLogo == null)
+            Sprite selectedLogo = _workflowUI != null ? _workflowUI.SelectedLogoSprite : null;
+            _onStartWorkflow?.Invoke(selectedLogo);
+            return;
+        }
+
+        // Legacy path: old CNCMachine (no CNC2Controller in scene)
+        Sprite logo = _workflowUI != null ? _workflowUI.SelectedLogoSprite : null;
+        if (logo == null)
         {
             Debug.LogWarning("[ControlPanelWorkflowStartButton] Start blocked: no logo selected.", this);
             return;
         }
 
-        _onStartWorkflow?.Invoke(selectedLogo);
+        _onStartWorkflow?.Invoke(logo);
 
         if (_machine != null)
             _machine.StartCut();
