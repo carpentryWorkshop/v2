@@ -1,11 +1,13 @@
 using UnityEngine;
+using CarpentryWorkshop.UI;
+using CarpentryWorkshop.InputSystem;
 
 [RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
     [Header("Movement")]
     public float moveSpeed = 5f;
-    public float verticalSpeed = 5f;   // Q/E
+    public float verticalSpeed = 5f;   // A/E (fly)
     public bool flyMode = true;
 
     [Header("Mouse Look")]
@@ -16,7 +18,7 @@ public class PlayerController : MonoBehaviour
 
     [Header("Cursor Lock")]
     public bool lockCursorOnStart = true;
-    public KeyCode unlockKey = KeyCode.Escape;  // optional: ESC toggles cursor lock
+    public KeyCode unlockKey = KeyCode.Escape;  // ESC toggles cursor lock
 
     CharacterController controller;
     float pitch;
@@ -35,6 +37,8 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
+        if (PauseController.IsPaused) return;
+
         if (Input.GetKeyDown(unlockKey))
         {
             cursorLocked = !cursorLocked;
@@ -44,7 +48,7 @@ public class PlayerController : MonoBehaviour
         if (controller == null || cameraRoot == null)
             return;
 
-        // Mauslook nur wenn Cursor gelockt ist (wie vorher)
+        // Mouse look only when cursor is locked
         if (cursorLocked)
         {
             float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
@@ -57,22 +61,34 @@ public class PlayerController : MonoBehaviour
             cameraRoot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
         }
 
-        // Movement (WASD + Q/E)
-        float moveX = Input.GetAxisRaw("Horizontal"); // A/D
-        float moveZ = Input.GetAxisRaw("Vertical");   // W/S
+        // Movement — reads from remappable InputBindings
+        float moveX = 0f;
+        if (Input.GetKey(InputBindings.Get(PlayerAction.StrafeLeft)))  moveX -= 1f;
+        if (Input.GetKey(InputBindings.Get(PlayerAction.StrafeRight))) moveX += 1f;
+
+        float moveZ = 0f;
+        if (Input.GetKey(InputBindings.Get(PlayerAction.Forward)))  moveZ += 1f;
+        if (Input.GetKey(InputBindings.Get(PlayerAction.Backward))) moveZ -= 1f;
 
         Vector3 move = (transform.right * moveX + transform.forward * moveZ).normalized * moveSpeed;
 
+        // Vertical fly — Q/E in Unity KeyCode = AZERTY physical "A"/"E" keys. Not remappable for now.
         float upDown = 0f;
         if (flyMode)
         {
-            if (Input.GetKey(KeyCode.Q)) upDown += 1f; // hoch
-            if (Input.GetKey(KeyCode.E)) upDown -= 1f; // runter
+            if (Input.GetKey(KeyCode.Q)) upDown += 1f; // up   (AZERTY "A")
+            if (Input.GetKey(KeyCode.E)) upDown -= 1f; // down (AZERTY "E")
         }
 
         Vector3 vertical = Vector3.up * (upDown * verticalSpeed);
 
         controller.Move((move + vertical) * Time.deltaTime);
+
+        // Interact — bound key, no logic yet (hook up later)
+        if (Input.GetKeyDown(InputBindings.Get(PlayerAction.Interact)))
+        {
+            // TODO: interact logic (pick up tools, activate CNC, etc.)
+        }
     }
 
     void ApplyCursorState()

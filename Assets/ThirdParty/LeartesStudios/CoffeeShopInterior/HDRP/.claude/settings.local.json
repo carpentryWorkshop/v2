@@ -1,0 +1,11 @@
+{
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "ai-game-developer"
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(awk '/value: Btn_PlayCampaign/{found=1} found && /m_MethodName/{print NR\": \"$0; found=0}' \"C:/Users/ameni/OneDrive/Bureau/projects/CarpentryWorkshopVR_V4/v2/Assets/SlimUI/Modern Menu 1/Prefabs/Canvas Templates/Canvas_DefaultTemplate1.prefab\")"
+    ]
+  }
+}
